@@ -1,0 +1,15 @@
+# colcon outputs
+build/
+install/
+log/
+
+# Upstream ROBOTIS repositories: cloned with `vcs import src < turtlebot3.repos`
+src/turtlebot3/
+src/turtlebot3_msgs/
+src/turtlebot3_simulations/
+src/DynamixelSDK/
+
+# Editor and Python files
+.vscode/
+__pycache__/
+*.pyc

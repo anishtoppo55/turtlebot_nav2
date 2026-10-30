@@ -1,0 +1,9 @@
+# Send only what the Dockerfile needs. Upstream packages are cloned from
+# turtlebot3.repos inside the image; build outputs are rebuilt there.
+*
+!turtlebot3.repos
+!docker/
+!gazebo_obstacles/
+!src/adaptive_path_replanner/
+**/__pycache__
+**/*.pyc
