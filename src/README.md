@@ -11,19 +11,20 @@
 This is a recovery helper, not a replacement for Nav2's planner/controller. It does not publish velocity commands or guarantee a route exists. Test in simulation first.
 
 ## Build
-Place this package under `<workspace>/src/` and run:
+For a first-time setup, follow [SETUP.md](../SETUP.md) or run `./scripts/setup.sh` from the repository root. To rebuild only this package after a change:
 ```bash
 cd <workspace>
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-select adaptive_path_replanner
 source install/setup.bash
 ```
+`<workspace>` is the folder you cloned the repository into.
 
 ## Run everything with one launch file
 Starts Gazebo (turtlebot3_world), Nav2 + RViz, the AMCL initial pose, random walls, and the replanner:
 ```bash
 ros2 launch adaptive_path_replanner simulation.launch.py
-ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=0.8 wall_seed:=5
+ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=0.4 wall_seed:=5
 ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=0 set_initial_pose:=false
 ```
 List all options with `ros2 launch adaptive_path_replanner simulation.launch.py --show-args`.
@@ -32,8 +33,12 @@ List all options with `ros2 launch adaptive_path_replanner simulation.launch.py 
 `layout:=maze` builds a random maze from the 12 gaps between neighbouring pillars. Every one of the 4 cells inside the grid stays reachable through exactly one gap.
 ```bash
 ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze
-ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_seed:=3 maze_spokes:=4 maze_openness:=0.2
+ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_walls:=6 maze_seed:=3
+ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_walls:=-1 maze_spokes:=4 maze_openness:=0.2
 ```
+Every wall is a square block from `wall.sdf` (0.25 m by default; set `maze_block_size`, or `--size` in the script, up to 0.78 m). A block sits in the middle of a gap, so a gap with a small block is narrowed rather than closed.
+
+`maze_walls` (script: `--walls`) sets the exact number of walls; the default is 4. Up to 8 go between pillars, and any beyond that point outward from the outer pillars. Set it to `-1` to choose walls randomly with `maze_openness` and `maze_spokes` instead.
 To change the maze while the simulation is running:
 ```bash
 python3 gazebo_obstacles/spawn_pillar_maze.py --dry-run --seed 3      # preview only
@@ -42,7 +47,7 @@ python3 gazebo_obstacles/spawn_pillar_maze.py --clear                 # remove t
 ```
 
 ## Run each part individually
-These steps start the same things as `simulation.launch.py`, one terminal at a time. That lets you restart a single part without restarting everything. Run this setup first in every terminal (in Docker, use `docker compose exec sim bash` instead; it is already set up):
+These steps start the same things as `simulation.launch.py`, one terminal at a time. That lets you restart a single part without restarting everything. Run this setup first in every terminal:
 ```bash
 cd <workspace>
 source /opt/ros/humble/setup.bash
@@ -82,9 +87,9 @@ ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 AMCL ignores this until it is active. Check with `ros2 lifecycle get /amcl` (it should print `active`).
 
 ### 4. Obstacles (optional)
-Random walls:
+Random square blocks:
 ```bash
-python3 gazebo_obstacles/spawn_random_walls.py --count 4 --length 0.8
+python3 gazebo_obstacles/spawn_random_walls.py --count 4 --size 0.4
 python3 gazebo_obstacles/spawn_random_walls.py --clear
 ```
 Or the maze on the 9 pillars:
@@ -102,16 +107,17 @@ ros2 run adaptive_path_replanner adaptive_path_replanner --ros-args \
   -p use_sim_time:=true \
   -p initial_inflation:=0.50 \
   -p inflation_step:=0.10 \
-  -p max_inflation:=0.80 \
-  -p stuck_timeout:=8.0 \
-  -p min_progress_distance:=0.10 \
-  -p min_path_deviation:=0.15 \
-  -p max_adaptations_per_goal:=3 \
+  -p max_inflation:=1.0 \
+  -p min_progress_distance:=0.5 \
+  -p min_path_deviation:=0.7 \
+  -p max_adaptations_per_goal:=6 \
   -p max_similar_path_retries:=1 \
   -p clear_global_costmap:=false \
-  -p comparison_delay:=2.0
+  -p stuck_timeout:=15.0 \
+  -p recovery_cooldown:=10.0 \
+  -p comparison_delay:=4.0
 ```
-Use `use_sim_time:=true` in Gazebo and `false` on the real robot. The robot counts as stuck when it hasn't moved `min_progress_distance` metres within `stuck_timeout` seconds. When the goal ends, the node restores the inflation radius to `initial_inflation`.
+`initial_inflation` must equal the global costmap's `inflation_radius` in `config/burger.yaml` (0.50 m); with a different value the first "raise" can lower the inflation instead. Use `use_sim_time:=true` in Gazebo and `false` on the real robot. The robot counts as stuck when it hasn't moved `min_progress_distance` metres within `stuck_timeout` seconds. When the goal ends, the node restores the inflation radius to `initial_inflation`.
 
 Each stuck detection starts one recovery, and `max_adaptations_per_goal` limits how many recoveries a goal gets. Within a recovery, the node raises inflation by `inflation_step`. If the new path differs by at least `min_path_deviation`, the recovery succeeds and the higher inflation stays. Otherwise the node raises it up to `max_similar_path_retries` more times. If the path still doesn't change, the node logs `No alternative route found` as a warning and undoes that recovery's raises. This is expected in places with only one way through, such as maze cells.
 

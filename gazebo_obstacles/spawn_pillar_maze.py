@@ -158,13 +158,19 @@ def spoke_wall(p, direction, length, gap):
     return x, y, math.atan2(dy, dx), length, (end_a, end_b)
 
 
-def sized_wall_xml(xml, length, thickness):
-    """Set the x (length) and y (thickness) of every box in the SDF."""
+def square_block_xml(xml, side):
+    """Make every box in the SDF a square block: side x side, same height."""
     def replace(match):
         _, _, z = match.group(1).split()
-        return f"<size>{length:.4f} {thickness:.4f} {z}</size>"
+        return f"<size>{side:.4f} {side:.4f} {z}</size>"
 
     return re.sub(r"<size>\s*([^<]+?)\s*</size>", replace, xml)
+
+
+def block_side(xml):
+    """Default block side: the larger of x and y in the SDF box."""
+    sizes = re.findall(r"<size>\s*([^<]+?)\s*</size>", xml)
+    return max(max(float(v) for v in s.split()[:2]) for s in sizes)
 
 
 def wall_height(xml):
@@ -236,14 +242,17 @@ def parse_args():
                    help="wall model (its height and colour are used)")
     p.add_argument("--seed", type=int, default=None,
                    help="random seed for a repeatable maze")
+    p.add_argument("--walls", type=int, default=4,
+                   help="exact total number of walls (default 4). Up to 8 go "
+                        "between pillars, the rest point outward. "
+                        "Use -1 to use --openness and --spokes instead")
     p.add_argument("--openness", type=float, default=0.0,
-                   help="chance (0-1) to open each extra gap; 0 = one way into each cell")
+                   help="with --walls -1: chance (0-1) to open each extra gap")
     p.add_argument("--spokes", type=int, default=3,
-                   help="number of outward walls from the outer pillars (0-12)")
-    p.add_argument("--spoke-length", type=float, default=0.6,
-                   help="length of each outward wall in metres")
-    p.add_argument("--thickness", type=float, default=0.08,
-                   help="wall thickness in metres")
+                   help="with --walls -1: number of outward walls (0-12)")
+    p.add_argument("--size", type=float, default=None,
+                   help="side of each square block in metres "
+                        "(default: box size in wall.sdf)")
     p.add_argument("--pillar-gap", type=float, default=0.01,
                    help="space left between a wall end and a pillar surface")
     p.add_argument("--robot-x", type=float, default=-2.0)
@@ -280,29 +289,55 @@ def main():
     with open(args.sdf, "r", encoding="utf-8") as f:
         base_xml = f.read()
     height = wall_height(base_xml)
+    side = args.size if args.size is not None else block_side(base_xml)
+    block_xml = square_block_xml(base_xml, side)
 
     gaps = build_gaps()
-    open_gaps = choose_open_gaps(gaps, args.openness, rng)
+
+    if args.walls >= 0:
+        # Exact total: fill gaps between pillars first (at most 8, so every
+        # cell stays reachable), then put the rest on outward walls.
+        open_gaps = choose_open_gaps(gaps, 0.0, rng)
+        closed = [k for k in range(len(gaps)) if k not in open_gaps]
+        rng.shuffle(closed)
+        gap_walls = min(args.walls, len(closed))
+        open_gaps |= set(closed[gap_walls:])
+        spoke_count = args.walls - gap_walls
+    else:
+        open_gaps = choose_open_gaps(gaps, args.openness, rng)
+        spoke_count = args.spokes
 
     robot = (args.robot_x, args.robot_y)
     candidates = []
     for p, d in spoke_candidates():
-        *_, (a, b) = spoke_wall(p, d, args.spoke_length, args.pillar_gap)
+        *_, (a, b) = spoke_wall(p, d, side, args.pillar_gap)
         if point_segment_distance(robot, a, b) >= args.robot_clearance:
             candidates.append((p, d))
     rng.shuffle(candidates)
-    spokes = candidates[:max(0, min(args.spokes, len(candidates)))]
+    spokes = candidates[:max(0, min(spoke_count, len(candidates)))]
 
+    if len(spokes) < spoke_count:
+        print(f"Warning: only room for {len(spokes)} outward walls; "
+              f"spawning {len(gaps) - len(open_gaps) + len(spokes)} walls "
+              f"instead of {args.walls}.")
+
+    # One square block per wall: in the middle of a closed gap, or just
+    # outside an outer pillar.
     walls = []
     for k, (a, b, _, _) in enumerate(gaps):
         if k not in open_gaps:
-            walls.append(wall_between(a, b, args.pillar_gap))
+            x, y, yaw, gap_length = wall_between(a, b, args.pillar_gap)
+            if side > gap_length:
+                sys.exit(f"--size {side:.2f} m is wider than the "
+                         f"{gap_length:.2f} m gap between pillars.")
+            walls.append((x, y, yaw))
     for p, d in spokes:
-        x, y, yaw, length, _ = spoke_wall(p, d, args.spoke_length, args.pillar_gap)
-        walls.append((x, y, yaw, length))
+        x, y, yaw, _, _ = spoke_wall(p, d, side, args.pillar_gap)
+        walls.append((x, y, yaw))
 
     print_layout(gaps, open_gaps, spokes)
-    print(f"{len(gaps) - len(open_gaps)} gap walls, {len(spokes)} outward walls")
+    print(f"{len(gaps) - len(open_gaps)} gap blocks, {len(spokes)} outward "
+          f"blocks, each {side:.2f} x {side:.2f} m")
 
     if args.dry_run:
         return
@@ -315,17 +350,16 @@ def main():
 
         existing = set(node.model_names())
         index = 0
-        for x, y, yaw, length in walls:
+        for x, y, yaw in walls:
             while f"{args.prefix}_{index}" in existing:
                 index += 1
             name = f"{args.prefix}_{index}"
             existing.add(name)
 
-            xml = sized_wall_xml(base_xml, length, args.thickness)
-            ok, msg = node.spawn(name, xml, x, y, 0.5 * height, yaw)
+            ok, msg = node.spawn(name, block_xml, x, y, 0.5 * height, yaw)
             if ok:
                 print(f"Spawned {name}: x={x:.2f} y={y:.2f} "
-                      f"yaw={math.degrees(yaw):.0f} deg length={length:.2f} m")
+                      f"size={side:.2f} m")
             else:
                 print(f"Failed to spawn {name}: {msg}")
     finally:

@@ -14,7 +14,7 @@ do this), which provides /spawn_entity, /delete_entity and /get_model_list.
 
 Examples:
   python3 gazebo_obstacles/spawn_random_walls.py --count 4
-  python3 gazebo_obstacles/spawn_random_walls.py --count 3 --length 0.8 --seed 42
+  python3 gazebo_obstacles/spawn_random_walls.py --count 3 --size 0.4 --seed 42
   python3 gazebo_obstacles/spawn_random_walls.py --clear
 """
 
@@ -84,8 +84,12 @@ def segment_segment_distance(a, b, c, d):
 # SDF HANDLING
 # ---------------------------------------------------------
 
-def load_wall_sdf(path, length):
-    """Return (sdf_xml, wall_length, wall_thickness, wall_height)."""
+def load_wall_sdf(path, side):
+    """Load the SDF as a square block.
+
+    Returns (sdf_xml, side, side, height). Every box gets x = y = side; the
+    default side is the larger of x and y in the file.
+    """
     with open(path, "r", encoding="utf-8") as f:
         xml = f.read()
 
@@ -94,20 +98,16 @@ def load_wall_sdf(path, length):
         sys.exit(f"No <size> element found in {path}")
 
     dims = [[float(v) for v in s.split()] for s in sizes]
-    file_length = max(d[0] for d in dims)
-    thickness = max(d[1] for d in dims)
     height = max(d[2] for d in dims)
+    if side is None:
+        side = max(max(d[0], d[1]) for d in dims)
 
-    if length is None:
-        return xml, file_length, thickness, height
-
-    # Override the length (x size) of every box in the model.
     def replace(match):
-        x, y, z = match.group(1).split()
-        return f"<size>{length} {y} {z}</size>"
+        _, _, z = match.group(1).split()
+        return f"<size>{side} {side} {z}</size>"
 
     xml = re.sub(r"<size>\s*([^<]+?)\s*</size>", replace, xml)
-    return xml, length, thickness, height
+    return xml, side, side, height
 
 
 # ---------------------------------------------------------
@@ -218,8 +218,9 @@ def parse_args():
     p.add_argument("--count", type=int, default=3, help="number of walls to spawn")
     p.add_argument("--sdf", default=os.path.join(SCRIPT_DIR, "wall.sdf"),
                    help="wall model file (default: wall.sdf next to this script)")
-    p.add_argument("--length", type=float, default=None,
-                   help="override wall length in metres (default: size in the SDF)")
+    p.add_argument("--size", "--length", dest="length", type=float, default=None,
+                   help="side of each square block in metres "
+                        "(default: box size in the SDF)")
     p.add_argument("--prefix", default="random_wall",
                    help="entity name prefix; also used by --clear")
     p.add_argument("--seed", type=int, default=None,
@@ -284,7 +285,7 @@ def main():
         if len(poses) < args.count:
             print(
                 f"Warning: only found room for {len(poses)} of {args.count} "
-                f"walls (length {length:.2f} m). Try a shorter --length, a "
+                f"blocks (size {length:.2f} m). Try a smaller --size, a "
                 "smaller --min-gap, or a larger --arena-radius."
             )
 
@@ -299,7 +300,7 @@ def main():
             ok, msg = node.spawn(name, xml, x, y, z, yaw)
             if ok:
                 print(f"Spawned {name}: x={x:.2f} y={y:.2f} z={z:.2f} "
-                      f"yaw={math.degrees(yaw):.0f} deg length={length:.2f} m")
+                      f"size={length:.2f} m")
             else:
                 print(f"Failed to spawn {name}: {msg}")
     finally:
