@@ -3,7 +3,7 @@
 A TurtleBot3 (burger) simulation on ROS 2 Humble with Gazebo Classic and Nav2. It adds:
 
 - **`adaptive_path_replanner`**: a node that detects when the robot is stuck and raises the global costmap inflation radius, so Nav2 looks for a different route.
-- **Obstacle scripts** in `gazebo_obstacles/`: random square blocks, or a random maze of square blocks on the 9 pillars of `turtlebot3_world`.
+- **Obstacle scripts** in `gazebo_obstacles/`: random walls, or a random maze of walls on the 9 pillars of `turtlebot3_world`.
 - **`simulation.launch.py`**: starts Gazebo, Nav2, RViz, the initial pose, the obstacles, and the replanner with one command.
 
 Package details, parameters, and how to run each part on its own are in [src/README.md](src/README.md).
@@ -40,7 +40,7 @@ When Gazebo and RViz open, click **Nav2 Goal** in RViz and pick a point on the m
 Pass options to `simulation.launch.py` as `name:=value`, for example:
 ```bash
 ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_walls:=6 maze_seed:=3
-ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=5 wall_length:=0.4
+ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=5 wall_length:=1.0
 ros2 launch adaptive_path_replanner simulation.launch.py layout:=none stuck_timeout:=15.0
 ```
 
@@ -59,7 +59,7 @@ ros2 launch adaptive_path_replanner simulation.launch.py layout:=none stuck_time
 
 | Option | Default | What it does |
 |---|---|---|
-| `layout` | `random` | `random` blocks, `maze` on the 9 pillars, or `none`. |
+| `layout` | `random` | `random` walls, a `maze` of walls on the 9 pillars, or `none`. |
 | `walls_delay` | `8.0` | Seconds after start before the obstacles spawn. |
 | `obstacles_dir` | `gazebo_obstacles/` in this repo | Folder with `wall.sdf` and the spawn scripts. |
 
@@ -67,19 +67,19 @@ With `layout:=random`:
 
 | Option | Default | What it does |
 |---|---|---|
-| `num_walls` | `3` | Number of square blocks (`0` = none). |
-| `wall_length` | size in `wall.sdf` (0.25 m) | Side of each block (m). |
+| `num_walls` | `3` | Number of walls (`0` = none). |
+| `wall_length` | `0.8` | Length of each wall (m). Walls are 0.12 m thick; the height comes from `wall.sdf`. |
 | `wall_seed` | random | Seed for a repeatable layout. |
 
 With `layout:=maze`:
 
 | Option | Default | What it does |
 |---|---|---|
-| `maze_walls` | `4` | Exact number of blocks. Up to 8 go between pillars, the rest outside the outer pillars. `-1` uses `maze_openness` and `maze_spokes` instead. |
-| `maze_block_size` | size in `wall.sdf` (0.25 m) | Side of each block (m), at most 0.78 (the gap between pillars). |
+| `maze_walls` | `4` | Exact number of walls. Up to 8 close gaps between pillars (0.78 m long); the rest point outward from the outer pillars (0.6 m long). `-1` uses `maze_openness` and `maze_spokes` instead. |
+| `maze_wall_thickness` | `0.12` | Thickness of the maze walls (m). The height comes from `wall.sdf`. |
 | `maze_seed` | random | Seed for a repeatable maze. |
 | `maze_openness` | `0.0` | With `maze_walls:=-1`: chance (0–1) of opening each extra gap. |
-| `maze_spokes` | `3` | With `maze_walls:=-1`: number of blocks outside the outer pillars (0–12). |
+| `maze_spokes` | `3` | With `maze_walls:=-1`: number of outward walls (0–12). |
 
 ### Adaptive path replanner
 
@@ -137,9 +137,9 @@ ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 AMCL ignores this until it is active. Check with `ros2 lifecycle get /amcl` (it should print `active`).
 
 ### 4. Obstacles (optional)
-Random square blocks:
+Random walls (default 0.8 m long, 0.12 m thick; change with `--length` and `--thickness`):
 ```bash
-python3 gazebo_obstacles/spawn_random_walls.py --count 4 --size 0.4
+python3 gazebo_obstacles/spawn_random_walls.py --count 4 --length 1.0
 python3 gazebo_obstacles/spawn_random_walls.py --clear
 ```
 Or the maze on the 9 pillars:

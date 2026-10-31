@@ -24,7 +24,7 @@ source install/setup.bash
 Starts Gazebo (turtlebot3_world), Nav2 + RViz, the AMCL initial pose, random walls, and the replanner:
 ```bash
 ros2 launch adaptive_path_replanner simulation.launch.py
-ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=0.4 wall_seed:=5
+ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=1.0 wall_seed:=5
 ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=0 set_initial_pose:=false
 ```
 List all options with `ros2 launch adaptive_path_replanner simulation.launch.py --show-args`.
@@ -36,7 +36,7 @@ ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze
 ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_walls:=6 maze_seed:=3
 ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_walls:=-1 maze_spokes:=4 maze_openness:=0.2
 ```
-Every wall is a square block from `wall.sdf` (0.25 m by default; set `maze_block_size`, or `--size` in the script, up to 0.78 m). A block sits in the middle of a gap, so a gap with a small block is narrowed rather than closed.
+Each gap wall runs from one pillar to the next (0.78 m) and closes that gap; outward walls are 0.6 m long. All maze walls are 0.12 m thick (`maze_wall_thickness`, or `--thickness` in the script; `--spoke-length` sets the outward wall length). The height comes from `wall.sdf`.
 
 `maze_walls` (script: `--walls`) sets the exact number of walls; the default is 4. Up to 8 go between pillars, and any beyond that point outward from the outer pillars. Set it to `-1` to choose walls randomly with `maze_openness` and `maze_spokes` instead.
 To change the maze while the simulation is running:
@@ -87,9 +87,9 @@ ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 AMCL ignores this until it is active. Check with `ros2 lifecycle get /amcl` (it should print `active`).
 
 ### 4. Obstacles (optional)
-Random square blocks:
+Random walls (default 0.8 m long, 0.12 m thick; change with `--length` and `--thickness`):
 ```bash
-python3 gazebo_obstacles/spawn_random_walls.py --count 4 --size 0.4
+python3 gazebo_obstacles/spawn_random_walls.py --count 4 --length 1.0
 python3 gazebo_obstacles/spawn_random_walls.py --clear
 ```
 Or the maze on the 9 pillars:

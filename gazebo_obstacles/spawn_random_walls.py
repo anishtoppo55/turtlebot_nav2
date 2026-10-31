@@ -14,7 +14,7 @@ do this), which provides /spawn_entity, /delete_entity and /get_model_list.
 
 Examples:
   python3 gazebo_obstacles/spawn_random_walls.py --count 4
-  python3 gazebo_obstacles/spawn_random_walls.py --count 3 --size 0.4 --seed 42
+  python3 gazebo_obstacles/spawn_random_walls.py --count 3 --length 1.0 --seed 42
   python3 gazebo_obstacles/spawn_random_walls.py --clear
 """
 
@@ -84,11 +84,11 @@ def segment_segment_distance(a, b, c, d):
 # SDF HANDLING
 # ---------------------------------------------------------
 
-def load_wall_sdf(path, side):
-    """Load the SDF as a square block.
+def load_wall_sdf(path, length, thickness):
+    """Load the SDF and reshape every box into a wall.
 
-    Returns (sdf_xml, side, side, height). Every box gets x = y = side; the
-    default side is the larger of x and y in the file.
+    Returns (sdf_xml, length, thickness, height). The box gets x = length
+    and y = thickness; the height (z) and material come from the file.
     """
     with open(path, "r", encoding="utf-8") as f:
         xml = f.read()
@@ -96,18 +96,17 @@ def load_wall_sdf(path, side):
     sizes = re.findall(r"<size>\s*([^<]+?)\s*</size>", xml)
     if not sizes:
         sys.exit(f"No <size> element found in {path}")
+    if length <= 0 or thickness <= 0:
+        sys.exit("--length and --thickness must be positive.")
 
-    dims = [[float(v) for v in s.split()] for s in sizes]
-    height = max(d[2] for d in dims)
-    if side is None:
-        side = max(max(d[0], d[1]) for d in dims)
+    height = max(float(s.split()[2]) for s in sizes)
 
     def replace(match):
         _, _, z = match.group(1).split()
-        return f"<size>{side} {side} {z}</size>"
+        return f"<size>{length} {thickness} {z}</size>"
 
     xml = re.sub(r"<size>\s*([^<]+?)\s*</size>", replace, xml)
-    return xml, side, side, height
+    return xml, length, thickness, height
 
 
 # ---------------------------------------------------------
@@ -218,9 +217,10 @@ def parse_args():
     p.add_argument("--count", type=int, default=3, help="number of walls to spawn")
     p.add_argument("--sdf", default=os.path.join(SCRIPT_DIR, "wall.sdf"),
                    help="wall model file (default: wall.sdf next to this script)")
-    p.add_argument("--size", "--length", dest="length", type=float, default=None,
-                   help="side of each square block in metres "
-                        "(default: box size in the SDF)")
+    p.add_argument("--length", type=float, default=0.8,
+                   help="wall length in metres (default 0.8)")
+    p.add_argument("--thickness", type=float, default=0.12,
+                   help="wall thickness in metres (default 0.12)")
     p.add_argument("--prefix", default="random_wall",
                    help="entity name prefix; also used by --clear")
     p.add_argument("--seed", type=int, default=None,
@@ -277,7 +277,9 @@ def main():
         if args.replace:
             delete_existing(node, args.prefix)
 
-        xml, length, thickness, height = load_wall_sdf(args.sdf, args.length)
+        xml, length, thickness, height = load_wall_sdf(
+            args.sdf, args.length, args.thickness
+        )
         z = 0.5 * height if args.z is None else args.z
         rng = random.Random(args.seed)
         poses = generate_poses(args, length, thickness, rng)
@@ -285,7 +287,7 @@ def main():
         if len(poses) < args.count:
             print(
                 f"Warning: only found room for {len(poses)} of {args.count} "
-                f"blocks (size {length:.2f} m). Try a smaller --size, a "
+                f"walls (length {length:.2f} m). Try a shorter --length, a "
                 "smaller --min-gap, or a larger --arena-radius."
             )
 
@@ -299,8 +301,9 @@ def main():
 
             ok, msg = node.spawn(name, xml, x, y, z, yaw)
             if ok:
-                print(f"Spawned {name}: x={x:.2f} y={y:.2f} z={z:.2f} "
-                      f"size={length:.2f} m")
+                print(f"Spawned {name}: x={x:.2f} y={y:.2f} "
+                      f"yaw={math.degrees(yaw):.0f} deg "
+                      f"length={length:.2f} m")
             else:
                 print(f"Failed to spawn {name}: {msg}")
     finally:

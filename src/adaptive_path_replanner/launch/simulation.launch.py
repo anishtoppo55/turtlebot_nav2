@@ -14,7 +14,7 @@ Starts:
 
 Usage:
   ros2 launch adaptive_path_replanner simulation.launch.py
-  ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=0.4
+  ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=4 wall_length:=1.0
   ros2 launch adaptive_path_replanner simulation.launch.py layout:=maze maze_seed:=3
   ros2 launch adaptive_path_replanner simulation.launch.py num_walls:=0 set_initial_pose:=false
 """
@@ -119,8 +119,7 @@ def pillar_maze_action(context):
         "python3", script,
         "--sdf", os.path.join(obstacles_dir, "wall.sdf"),
         "--walls", LaunchConfiguration("maze_walls").perform(context),
-        *(["--size", LaunchConfiguration("maze_block_size").perform(context)]
-          if LaunchConfiguration("maze_block_size").perform(context) else []),
+        "--thickness", LaunchConfiguration("maze_wall_thickness").perform(context),
         "--openness", LaunchConfiguration("maze_openness").perform(context),
         "--spokes", LaunchConfiguration("maze_spokes").perform(context),
         "--robot-x", LaunchConfiguration("x_pose").perform(context),
@@ -222,9 +221,8 @@ def generate_launch_description():
         DeclareLaunchArgument("maze_walls", default_value="4",
                               description="Exact number of maze walls "
                                           "(-1 = use maze_openness and maze_spokes)"),
-        DeclareLaunchArgument("maze_block_size", default_value="",
-                              description="Side of each square maze block in m "
-                                          "(empty = size in wall.sdf, max 0.78)"),
+        DeclareLaunchArgument("maze_wall_thickness", default_value="0.12",
+                              description="Thickness of the maze walls in m"),
         DeclareLaunchArgument("maze_openness", default_value="0.0",
                               description="Chance (0-1) to open extra maze gaps"),
         DeclareLaunchArgument("maze_spokes", default_value="3",
@@ -232,7 +230,7 @@ def generate_launch_description():
         DeclareLaunchArgument("num_walls", default_value="3",
                               description="Random walls to spawn (0 = none)"),
         DeclareLaunchArgument("wall_length", default_value="",
-                              description="Side of each square block in m (empty = size in wall.sdf)"),
+                              description="Wall length in m (empty = 0.8)"),
         DeclareLaunchArgument("wall_seed", default_value="",
                               description="Random seed for a repeatable wall layout"),
         DeclareLaunchArgument("walls_delay", default_value="8.0",
